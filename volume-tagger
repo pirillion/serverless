@@ -1,0 +1,69 @@
+import json
+import boto3
+keyname='Project'
+tag_keyname='tag:Project'
+## set to True to place in reporting mode, ie no tags created
+Reporting_mode=True
+
+
+ec2 = boto3.resource('ec2')
+ec2client = boto3.client('ec2')
+
+
+def check_instance_has_a_tag():
+    print('Check Instance has the Key Tag:',keyname)
+    for instance in ec2.instances.all():
+        ##print ('Instance Tags:',instance.instance_id,instance.tags)
+        skipit = False
+        for tag in instance.tags:
+            if keyname in tag['Key']:
+                print('Compliant instance ID and Key Tag:',instance.instance_id,':', tag['Key'])
+                skipit = True
+                break
+        if skipit == False:
+            print('Non compliant Instance ID - missing above Tag !',instance.instance_id)
+
+ 
+#-----Define Lambda function-----#
+def lambda_handler(event, context):
+    check_instance_has_a_tag()
+#-----Check& filter Instances with a tag named keyname and non blank value ! Otherwise ignore all  -----#
+    instances = ec2client.describe_instances(Filters=[{'Name': tag_keyname, 'Values': ['?*'] }] )
+    ##instances = ec2client.describe_instances(Filters=[  {'Name': 'tag:keyname', 'Values': ['?*'] } or {'Name': 'tag:keyname', 'Values': ['?*'] }  ])
+    ##instances = ec2client.describe_instances(Filters=[{'Name': 'tag:+keyname', 'Values': ['?*']   }] )
+    #print('instance filter',instances)
+#-----Define dictionary to store Tag Key & value------#
+    dict={}
+    ##print('dict')
+ 
+#-----Store Key & Value of Instance Tag:“Name” ------#
+    for reservation in instances['Reservations']:
+        for instance in reservation['Instances']:
+           ##print('InstanceID:', instance['InstanceId'])
+           for tag in instance['Tags']: 
+                if tag['Key'] == keyname:
+                    ##print ( instance['InstanceId'],tag['Value'])
+                    ##ids.append(( instance['InstanceId'],tag['Value']))
+                    dict[instance['InstanceId']]= tag['Value']
+                    ##print('dict',dict)
+                    
+#-----Store Key & Value with attached instance ID of all volumes ------#     
+    volumes = ec2.volumes.all() 
+    for volume in volumes:
+ 
+#-----compare dictionary value Key:InstanceID and volume attached Key:InstanceID ------#     
+        for a in volume.attachments:
+            for key, value in dict.items():
+ 
+#-----compare dictionary value Key:InstanceID and volume attached Key:InstanceID ------# 
+#-----If the InstanceID matched create new Tag:’Kloud_Name’ with key of value: servername ------#     
+                if Reporting_mode != True:
+                    if a['InstanceId'] == key:
+                        volume.create_tags(Tags=[{'Key': keyname, 'Value': value}])
+                        print('Volume Tags Written:',key, value)
+                     
+                     
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Hello from Lambda!')
+    }
