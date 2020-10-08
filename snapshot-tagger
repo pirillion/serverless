@@ -1,0 +1,142 @@
+import json
+import boto3
+keyname='Project'
+tag_keyname='tag:Project'
+## set to True to place in reporting mode, ie no tags created
+Reporting_mode=True
+count=0
+skipproj=0
+skipprojname=0
+
+
+ec2 = boto3.resource('ec2')
+ec2client = boto3.client('ec2')
+findsnap = ec2.Snapshot('id')
+
+
+#-----Define Lambda function-----#
+def lambda_handler(event, context):
+    
+    fields=0
+    notagfound=False
+    checktag=False
+    
+    
+#----Filter on Tag name at top of file, with a tag named keyname and non blank value ! Otherwise ignore all  -----#
+#---- A boto3 call returns all volumes on the filter of keyname and a non blank value ! -----# 
+    attachments = ec2client.describe_volumes(Filters=[{'Name': tag_keyname, 'Values': ['?*'] }] )
+    print('volumes::',attachments)   ## DEBUG
+    
+#---- A boto3 call to get all snapshots created in this aws account ----#    
+    snapshots = {
+        snapshot["SnapshotId"]: snapshot
+        for page in ec2client.get_paginator("describe_snapshots").paginate(OwnerIds=["self"])
+        for snapshot in page["Snapshots"] }
+    print('List of snapshots::',snapshots)
+ 
+#-----Initialise a dictionary to store the volume's Tag Key & value to be used to write the snapshot tags ------#
+    dict={}
+    
+ 
+#-----Store Key & Value of volume Tag:“Name” ------#
+#----- Loops to get volumeId, and tag information from returned boto3 call ----#
+    count=0
+    increment = 0 
+    print('**Iterate through volumes queried from above::**')
+    for volume in attachments['Volumes']:
+        for attachment in volume['Attachments']:
+           print('VolumeID:', volume['Attachments'])
+           for tag in volume['Tags']: 
+                if tag['Key'] == keyname:
+                    ##print ( instance['InstanceId'],tag['Value'])
+                    ##ids.append(( instance['InstanceId'],tag['Value']))
+                    dict[volume['VolumeId']]= tag['Value']
+                    print('DICT:',dict) # DEBUG
+                    count +=1
+                    print('count:',count)
+                increment = increment = increment + 1    
+        print('Volume outer loop:',count,increment)
+        
+        
+        
+    #-----Start to iterate through each snapshot ------#     
+    ## snapshots = ec2client.get_paginator("describe_snapshots").paginate(OwnerIds=["self"])
+    print('[*** Iterate through snaphots ***]:',snapshots)
+    for snapshot in snapshots:
+        ##print('snp:',snapshot) # DEBUG
+#-----compare dictionary value Key:InstanceID and volume attached Key:InstanceID ------#
+        fields=0
+        for y in snapshots[snapshot]:
+            ##for v in va:
+                print(y,"::",snapshots[snapshot][y])
+                
+                
+                if  y == "Tags":
+                                            print('Specific Tag::',snapshots[snapshot]['Tags'][0]['Key'])
+                                            for dictionary in snapshots[snapshot][y]:
+                                                key4 = dictionary['Key']
+                                                print('Key name:****',key4)
+                                                value4 = dictionary['Value']
+                                                if key4 == keyname:
+                                                    proj = '"' + key4 + '"'
+                                                    print('Key Name:',proj)
+                                                else:
+                                                        notagfound=True
+            
+                                                if(len(value4) > 0):
+                                                    projname = '"' + value4 + '"'
+                                                    print('Key value:',projname)
+                                                
+                                                    
+                print('snp:',snapshot) # DEBUG                                    
+                fields +=1
+                print('fields',fields) 
+                print('Snaphot field length::',len(snapshots[snapshot]))
+                
+                    
+                print('snapshot properties loop::')  # DEBUG
+                print('skip flags::',skipproj,skipprojname)
+                print('dict::',dict.items())
+                for key, value in dict.items():
+                    print('Key:Value',key,value)
+                ##print('Snapshot vol ID: Tags', snapshot.id,snapshot.tags)
+#-----If the snapshot volumeId matches volume volumeId create new Tag:’Kloud_Name’ with key of value: ------#     
+                ##if Reporting_mode != True:
+                    
+                    if snapshots[snapshot][y] == key:
+                        ##print('Snap Vol ID:',snapshots[snapshot][y]) # DEBUG
+                        ##print('Volume Key:Value',key,value) # DEBUG
+                        ##print('Volume VolumeId:',key)
+                        ##print('SKIPPROJ,SKIPPRJNAME::',skipproj,skipprojname)
+                        ## snapshot.create_tags(Tags=[{'Key': keyname, 'Value': value}])
+                        ##print('skip flags before tag write::',skipproj,skipprojname,fields)
+                        ## if (skipproj == 0 and skipprojname == 0):
+                            ##lookup = ec2client.describe_snaphots(Filters=[{'Name': tag_keyname, 'Values': ['?*'] }] )
+                            ##print('snap id',snapshot)
+                            ##lookup = ec2client.describe_snapshots(Filters=[{'Name': 'volume-id', 'Values': ['keys'] }])
+                            print('KEY ****:::', key)
+                            ##lookup = ec2client.describe_snapshots(Filters=[{'Name': 'volume-id', 'Values': [key] }, {'Name': tag_keyname, 'Values': ['?*'] }]  )
+                            ##print('Results of desc snapsts::',lookup)
+                            ##dict2string = json.dumps(lookup, default=str)
+                            ##print('string length:',len(dict2string))
+                            print('snp:',snapshot) # DEBUG
+                            
+                            if len(snapshots[snapshot]) >= 10:
+                                if snapshots[snapshot]['Tags'][0]['Key'] != keyname:
+                                    checktag=True
+                                
+                            ##print('If query was less than 343 at:', len(dict2string),'or snapshot properties less than:',len(snapshots[snapshot]),'or NoTagFound:',notagfound,'or Tag non there:',checktag)
+                            ##if len(dict2string) <= 343 or len(snapshots[snapshot]) < 10 or checktag == True:
+                            print('If snapshot properties less than:',len(snapshots[snapshot]),'or Tag Key Name missing  :',checktag)
+                            if len(snapshots[snapshot]) < 10 or checktag == True:
+                                ec2.create_tags(Resources=[snapshot], Tags=[{'Key': keyname, 'Value': value}])
+                                print('If statement Snapshot Tags Written:',key, value)
+                            else:
+                                print('Did not write tag:')
+                
+                            
+                     
+    return {
+        'statusCode': 200,
+        'body': json.dumps('Hello from Lambda!')
+    }
